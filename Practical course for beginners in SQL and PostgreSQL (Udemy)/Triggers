@@ -1,0 +1,209 @@
+-ТРИГГЕРЫ построчные--
+
+--мы хотим логировать временную метку последнего изменения строки в таблице кастомерс
+ALTER TABLE customers 
+ADD COLUMN last_updated timestamp;
+--создаем функция для триггера
+CREATE OR REPLACE FUNCTION track_chang_customers() RETURNS trigger AS $$
+BEGIN
+	NEW.last_updated = now(); --фкция которая возращает текущее время
+	RETURN NEW;
+END
+$$ LANGUAGE plpgsql;
+
+--создаем обьект триггера и привязіваем к нему фкция
+DROP TRIGGER IF EXISTS customers_timestamp ON customers;
+CREATE TRIGGER customers_timestamp BEFORE INSERT OR UPDATE ON customers
+	FOR EACH ROW EXECUTE PROCEDURE track_chang_customers();
+
+SELECT * FROM customers
+WHERE customer_id = 'ADBCDE';
+
+UPDATE customers 
+SET address = 'bla'
+WHERE customer_id = 'ALFKI';
+
+INSERT INTO customers 
+VALUES ('ADBCDE', 'company', 'title', 'contact', 'address', 'city', null, 'code', 'country', '', '', null);
+
+
+--мы можем логировать юзера который логировал инфу, на инсерт или апдейт
+ALTER TABLE employees
+ADD COLUMN user_changed text;
+
+CREATE OR REPLACE FUNCTION track_chang_employees() RETURNS trigger AS $$
+BEGIN
+	NEW.user_changed = session_user; --фкция которая сохраняет данные о текущем пользователе
+	RETURN NEW;
+END
+$$ LANGUAGE plpgsql; 
+ 
+DROP TRIGGER IF EXISTS employees_user_change ON employees;
+CREATE TRIGGER employees_user_change BEFORE INSERT OR UPDATE ON employees
+	FOR EACH ROW EXECUTE PROCEDURE track_chang_employees();
+
+SELECT * FROM employees;
+
+ALTER TABLE employees
+ADD COLUMN salary decimal(12,2);
+UPDATE employees SET salary = random()*100;
+
+
+UPDATE employees 
+SET salary = 88
+WHERE employee_id = 1;
+
+INSERT INTO employees
+VALUES (10, '', '', '', '', null, null, '', '', '', '', '', '', '', null, '', null, '', 0, null);
+
+
+
+--ТРИГЕРЫ на утверждение--
+--мы хотим оставлять след всех инсертов апдейтов и делетов в отдельной таблице
+DROP TABLE IF EXISTS products_audit;
+
+CREATE TABLE products_audit
+(
+	op char(1) NOT NULL,
+	user_changed text NOT NULL,
+	time_stamp timestamp NOT NULL,
+	
+	product_id smallint NOT NULL,
+	product_name varchar(40) NOT NULL,
+	supplier_id smallint,
+	category_id smallint,
+	quantity_per_unit varchar(20),
+	unit_price real,
+	units_in_stock smallint,
+	units_on_order smallint,
+	reorder_level smallint,
+	discontinued integer NOT NULL
+);
+--для начала создаем функцию
+CREATE OR REPLACE FUNCTION build_audit_products() RETURNS trigger AS $$
+BEGIN
+	IF TG_OP = 'INSERT' THEN 
+		INSERT INTO products_audit
+		SELECT 'I', session_user, now(), nt.* FROM new_table nt;
+	ELSEIF TG_OP = 'UPDATE' THEN
+		INSERT INTO products_audit
+		SELECT 'U', session_user, now(), nt.* FROM new_table nt;
+	ELSEIF TG_OP = 'DELETE' THEN
+		INSERT INTO products_audit
+		SELECT 'D', session_user, now(), ot.* FROM old_table ot;
+	END IF;
+	RETURN NULL;
+END
+$$ LANGUAGE plpgsql;
+
+--теперь нужно создать 3 триггера
+
+DROP TRIGGER IF EXISTS audit_products_insert ON products;
+CREATE TRIGGER audit_products_insert AFTER INSERT ON products 
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_products();
+
+DROP TRIGGER IF EXISTS audit_products_update ON products;
+CREATE TRIGGER audit_products_update AFTER UPDATE ON products 
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_products();
+
+DROP TRIGGER IF EXISTS audit_products_delete ON products;
+CREATE TRIGGER audit_products_delete AFTER DELETE ON products 
+REFERENCING OLD TABLE AS old_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_products();
+
+SELECT * FROM products ORDER BY product_id DESC;
+
+INSERT INTO products 
+VALUES (80, 'Ukrainian Mozzarella', 7, 4, '200g for pack', 50, 20, 0, 0, 0);
+
+SELECT * FROM products_audit;
+
+UPDATE products
+SET unit_price = 60
+WHERE product_id = 80;
+
+DELETE FROM products 
+WHERE product_id = 80;
+
+--тригеры задание1
+ALTER TABLE products
+ADD COLUMN last_updated timestamp 
+
+CREATE OR REPLACE FUNCTION last_updated_prod() RETURNS trigger AS $$
+BEGIN
+	NEW.last_updated = now(); 
+	RETURN NEW;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS products_timestamp ON products;
+CREATE TRIGGER products_timestamp BEFORE INSERT OR UPDATE ON products
+	FOR EACH ROW EXECUTE PROCEDURE last_updated_prod();
+
+SELECT last_updated, * FROM products
+
+UPDATE products 
+SET product_name = 'Yana'
+WHERE product_id = 1;
+
+ALTER TABLE products
+DISABLE TRIGGER audit_products_update
+
+--задание 2 тригеры
+SELECT * FROM order_details
+DROP TABLE IF EXISTS order_details_audit;
+
+CREATE TABLE order_details_audit
+(
+	op char(1) NOT NULL,
+	user_changed text NOT NULL,
+	time_stamp timestamp NOT NULL,
+	
+	order_id smallint NOT NULL,
+	product_id smallint NOT NULL,
+	unit_price real NOT NULL,
+	quantity smallint NOT NULL,
+	discount real 
+);
+--для начала создаем функцию
+CREATE OR REPLACE FUNCTION build_audit_order_details() RETURNS trigger AS $$
+BEGIN
+	IF TG_OP = 'INSERT' THEN 
+		INSERT INTO order_details_audit
+		SELECT 'I', session_user, now(), nt.* FROM new_table nt;
+	ELSEIF TG_OP = 'UPDATE' THEN
+		INSERT INTO order_details_audit
+		SELECT 'U', session_user, now(), nt.* FROM new_table nt;
+	ELSEIF TG_OP = 'DELETE' THEN
+		INSERT INTO order_details_audit
+		SELECT 'D', session_user, now(), ot.* FROM old_table ot;
+	END IF;
+	RETURN NULL;
+END
+$$ LANGUAGE plpgsql;
+
+--теперь нужно создать 3 триггера
+
+DROP TRIGGER IF EXISTS audit_order_details_insert ON order_details;
+CREATE TRIGGER audit_order_details_insert AFTER INSERT ON order_details 
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_order_details();
+
+DROP TRIGGER IF EXISTS audit_order_details_update ON order_details;
+CREATE TRIGGER audit_order_details_update AFTER UPDATE ON order_details 
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_order_details();
+
+DROP TRIGGER IF EXISTS audit_order_details_delete ON order_details;
+CREATE TRIGGER audit_order_details_delete AFTER DELETE ON order_details 
+REFERENCING OLD TABLE AS old_table
+FOR EACH STATEMENT EXECUTE PROCEDURE build_audit_order_details();
+
+SELECT * FROM order_details ORDER BY order_id DESC
+
+INSERT INTO order_details
+VALUES (11079, 10, 40, 25, 0);
+
+SELECT * FROM order_details_audit
