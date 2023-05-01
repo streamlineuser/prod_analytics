@@ -1,0 +1,91 @@
+-ПРАВА И РОЛИ
+
+CREATE ROLE sales_stuff;
+CREATE ROLE northwind_admins;
+
+CREATE USER john_smith WITH PASSWORD 'qwerty'; 
+CREATE USER north_admin1 WITH PASSWORD 'qwerty'; 
+
+--как изьять права из схемі пабліков?
+
+REVOKE CREATE ON SCHEMA public FROM public;
+REVOKE ALL ON DATABASE northwind FROM public;
+
+--ПРАВА НА УРОВНЕ БД И СХЕМЫ
+GRANT CONNECT ON DATABASE northwind TO sales_stuff;
+GRANT CONNECT ON DATABASE northwind TO northwind_admins;
+
+GRANT USAGE ON SCHEMA public to sales_stuff;
+GRANT USAGE ON SCHEMA public to northwind_admins;
+GRANT CREATE ON SCHEMA public to northwind_admins;
+GRANT CREATE ON DATABASE northwind to northwind_admins;
+
+--Наделим пользовоателей возможностью ролей , присоеденим их
+GRANT sales_stuff to john_smith;
+GRANT northwind_admins to north_admin1;
+
+--ПРАВА на уровне таблиц
+
+--сделаем запрос чтобы посмотреть админов таблицы
+SELECT grantee, privilage_type
+FROM information.schema.role_table_grants
+WHERE table_name = 'admin_demo2';
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE 
+public.orders, 
+public.order_details,
+public.products
+TO sales_stuff;
+
+GRANT SELECT ON TABLE public.employees TO sales_stuff;
+
+GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER ON ALL TABLES
+IN SCHEMA public
+TO northwind_admins;
+
+--ПРАВА на уровне КОЛОНОК--даем права на селект отпределнных колонок
+GRANT SELECT (last_name, first_name, title, birth_date, city, region, postal_code, country)
+ON employees
+TO sales_stuff;
+
+--но сначала нужно забрать то, что хочешь дать!
+REVOKE SELECT ON employees FROM sales_stuff;
+
+--ПРАВА НА УРОВНЕ СТРОК
+--для включения безопасности на уровне строк нужно дать команду(никто ничего не видит кроме мегадамина)
+
+ALTER TABLE products
+ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY active_prod_for_sales_stuff ON products
+FOR SELECT 
+TO sales_stuff
+USING (discontinued <> 1);
+
+SELECT * FROM products
+
+SELECT * FROM products
+WHERE reorder_level > 10; --38 записей
+
+CREATE POLICY reordered_prod_for_sales_stuff ON products
+FOR SELECT 
+TO sales_stuff
+USING (reorder_level > 10);
+
+DROP POLICY reordered_prod_for_sales_stuff ON products;
+
+--ИЗЫМАЕМ права и удаляем РОЛИ
+
+--заберем все привелеги сейлзов на доступ к таблицам к которым мы дали доступ
+REVOKE ALL PRIVILEGES ON employees, orders, order_details, products FROM sales_stuff;
+REVOKE ALL PRIVILEGES ON DATABASE northwind FROM sales_stuff;
+REVOKE ALL ON SCHEMA public FROM sales_stuff;
+
+--не забываем удалить и остальнок 
+DROP POLICY active_prod_for_sales_stuff ON products;
+
+--дроп роль
+DROP ROLE sales_stuff;
+
+SELECT * FROM pg_roles
+DROP USER john_smith
